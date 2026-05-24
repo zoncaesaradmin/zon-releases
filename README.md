@@ -86,7 +86,7 @@ curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/in
 No `GITHUB_TOKEN` is required. The installer downloads artifacts directly from:
 
 ```text
-https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/releases/agent/latest/
+https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/release/agent/latest/
 ```
 
 ## Refresh release artifacts
@@ -106,15 +106,15 @@ What `build.sh` does:
 2. checks out `main`
 3. runs `make releases`
 4. finds the built `zon-agentd_*` binaries
-5. copies them into `releases/agent/latest/`
-6. regenerates `releases/agent/latest/SHA256SUMS`
+5. copies them into `release/agent/latest/`
+6. regenerates `release/agent/latest/SHA256SUMS`
 
 Defaults:
 
 - source repo: `git@github.com:zoncaesaradmin/zonpackager.git`
 - source ref: `main`
 - source checkout: `.build/zonpackager`
-- target release dir: `releases/agent/latest`
+- target release dir: `release/agent/latest`
 
 Optional overrides:
 
