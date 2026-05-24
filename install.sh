@@ -4,7 +4,7 @@ set -eu
 
 PRODUCT="${PRODUCT:-agent}"
 VERSION="${VERSION:-latest}"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-}"
 VERIFY_CHECKSUMS="${VERIFY_CHECKSUMS:-1}"
 INSTALL_SERVICE="${INSTALL_SERVICE:-0}"
 START_SERVICE="${START_SERVICE:-0}"
@@ -213,7 +213,7 @@ install_binary() {
   target_dir="$(dirname "$target_file")"
   temp_target="${target_file}.tmp.$$"
 
-  mkdir -p "$target_dir" 2>/dev/null || fail "Cannot create $target_dir. Try INSTALL_DIR=\$HOME/.local/bin."
+  mkdir -p "$target_dir" 2>/dev/null || fail "Cannot create $target_dir. Set INSTALL_DIR to a writable directory."
 
   if [ -f "$target_file" ] && [ "$(sha256_file "$source_file")" = "$(sha256_file "$target_file")" ]; then
     binary_changed=0
@@ -228,7 +228,7 @@ install_binary() {
     binary_action='installed'
   fi
 
-  cp "$source_file" "$temp_target" 2>/dev/null || fail "Cannot write to $target_file. Try INSTALL_DIR=\$HOME/.local/bin."
+  cp "$source_file" "$temp_target" 2>/dev/null || fail "Cannot write to $target_file. Set INSTALL_DIR to a writable directory."
   chmod 0755 "$temp_target" || fail "Failed to set executable permissions on $temp_target"
   mv -f "$temp_target" "$target_file" || fail "Failed to replace $target_file"
   binary_changed=1
@@ -237,6 +237,16 @@ install_binary() {
 
 is_root() {
   [ "$(id -u)" -eq 0 ]
+}
+
+resolve_default_install_dir() {
+  if is_root; then
+    printf '%s\n' "$SYSTEM_INSTALL_DIR"
+    return
+  fi
+
+  [ -n "${HOME:-}" ] || fail "HOME is not set. Set INSTALL_DIR explicitly."
+  printf '%s\n' "${HOME}/.local/bin"
 }
 
 systemd_is_available() {
@@ -394,6 +404,10 @@ service_available=0
 
 if [ "$os" = 'linux' ] && bool_true "$START_SERVICE"; then
   INSTALL_SERVICE=1
+fi
+
+if [ -z "$INSTALL_DIR" ]; then
+  INSTALL_DIR="$(resolve_default_install_dir)"
 fi
 
 if [ "$os" = 'linux' ] && { service_requested || [ -f "$systemd_unit_path" ]; }; then

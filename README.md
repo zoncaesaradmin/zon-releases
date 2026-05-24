@@ -15,9 +15,37 @@ user-facing documentation, not private source code or internal build logic.
 - Linux: `amd64`, `arm64`
 - Windows: `amd64`, `arm64`
 
+## Artifact resolution
+
+The installer auto-detects your operating system and CPU architecture, then
+downloads the matching release artifact:
+
+- macOS Intel: `zon-agentd_darwin_amd64`
+- macOS Apple Silicon: `zon-agentd_darwin_arm64`
+- Linux x86_64: `zon-agentd_linux_amd64`
+- Linux ARM64: `zon-agentd_linux_arm64`
+- Windows x86_64: `zon-agentd_windows_amd64.exe`
+- Windows ARM64: `zon-agentd_windows_arm64.exe`
+
+Architecture only affects which binary is downloaded. It does not change the
+default install directory.
+
 ## Install the latest agent release
 
-Recommended user-local install:
+Default install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | bash
+```
+
+This installs to:
+
+```text
+Non-root user: $HOME/.local/bin/zon-agentd
+Root user: /usr/local/bin/zon-agentd
+```
+
+Explicit user-local install:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
@@ -35,7 +63,7 @@ Linux systemd install and start:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
-  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 START_SERVICE=1 bash
+  sudo env INSTALL_SERVICE=1 START_SERVICE=1 bash
 ```
 
 ## Install a specific version
@@ -44,6 +72,14 @@ curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/in
 curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
   PRODUCT=agent VERSION=v0.1.0 INSTALL_DIR="$HOME/.local/bin" bash
 ```
+
+## Install behavior by platform
+
+- macOS: binary-only install; no automatic service setup
+- Linux without `systemd`: binary-only install; no automatic service setup
+- Linux with `systemd`: optional fully managed service install with
+  `INSTALL_SERVICE=1`
+- Windows: binary-only install; no automatic service setup
 
 ## Install from this public repo
 
@@ -69,14 +105,16 @@ The installer:
 3. downloads `SHA256SUMS` and the matching binary
 4. verifies the checksum by default
 5. installs or updates the binary in `INSTALL_DIR`
-6. optionally installs a Linux `systemd` service using fixed system paths
-7. restarts an already-running Linux `systemd` service after an update
+6. prints what it installed, updated, or skipped
+7. optionally installs a Linux `systemd` service using fixed system paths
+8. restarts an already-running Linux `systemd` service after an update
 
 Default settings:
 
 - `PRODUCT=agent`
 - `VERSION=latest`
-- `INSTALL_DIR=/usr/local/bin`
+- `INSTALL_DIR=$HOME/.local/bin` for non-root users
+- `INSTALL_DIR=/usr/local/bin` for root
 - `VERIFY_CHECKSUMS=1`
 - `INSTALL_SERVICE=0`
 - `START_SERVICE=0`
@@ -108,18 +146,25 @@ Working directory: /var/lib/zon
 
 If the directories or log file do not exist, the installer creates them.
 
+Notes:
+
+- `START_SERVICE=1` also implies `INSTALL_SERVICE=1` on Linux
+- if a Linux service already exists, the installer treats repeat runs as
+  managed upgrades
+- Linux service install and upgrade must run as root
+
 Install the service but do not start it yet:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
-  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 bash
+  sudo env INSTALL_SERVICE=1 bash
 ```
 
 Install the service and start it immediately:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
-  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 START_SERVICE=1 bash
+  sudo env INSTALL_SERVICE=1 START_SERVICE=1 bash
 ```
 
 Manage the service:
@@ -139,6 +184,8 @@ The same `install.sh` command is used for both fresh installs and upgrades.
 
 - Running the installer again downloads the current artifact from the selected
   `VERSION` path and replaces the installed binary.
+- The binary replacement is done by writing a temp file and atomically moving
+  it into place.
 - If a Linux `zon-agentd.service` already exists and is currently running, the
   installer restarts it after updating the binary.
 - If `INSTALL_SERVICE=1` is used during an upgrade, the installer also refreshes
@@ -154,7 +201,8 @@ The same `install.sh` command is used for both fresh installs and upgrades.
 By default, the agent binary is installed to:
 
 ```text
-/usr/local/bin/zon-agentd
+Non-root user: $HOME/.local/bin/zon-agentd
+Root user: /usr/local/bin/zon-agentd
 ```
 
 If you set `INSTALL_DIR`, the binary is installed there instead. For a
@@ -162,6 +210,13 @@ user-local install, the binary path is usually:
 
 ```text
 $HOME/.local/bin/zon-agentd
+```
+
+On Linux, if service mode is requested or already installed, the installer uses
+the fixed system path:
+
+```text
+/usr/local/bin/zon-agentd
 ```
 
 ## Run it
@@ -178,6 +233,12 @@ If you installed to `$HOME/.local/bin`, make sure that directory is on your
 For Linux service installs, use `systemctl` instead of running the binary
 directly.
 
+Manual start command shape:
+
+```bash
+zon-agentd -addr ":8080" -log-file "<platform-log-file>"
+```
+
 ## Logs
 
 When run directly, logs are written to your terminal.
@@ -193,6 +254,7 @@ current platform, for example:
 
 - macOS: `$HOME/Library/Logs/zon/zon-agentd.log`
 - Linux without `systemd` service mode: `$HOME/.local/state/zon/zon-agentd.log`
+- Windows: `%USERPROFILE%/AppData/Local/zon/logs/zon-agentd.log`
 
 ## Uninstall
 
@@ -203,3 +265,13 @@ rm -f "$HOME/.local/bin/zon-agentd"
 ```
 
 If you installed system-wide, remove `/usr/local/bin/zon-agentd` instead.
+
+If you installed the Linux `systemd` service, also disable and remove it:
+
+```bash
+sudo systemctl stop zon-agentd.service
+sudo systemctl disable zon-agentd.service
+sudo rm -f /etc/systemd/system/zon-agentd.service
+sudo systemctl daemon-reload
+sudo rm -f /usr/local/bin/zon-agentd
+```
