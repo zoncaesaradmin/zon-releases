@@ -207,6 +207,34 @@ ensure_runtime_log_dir() {
   mkdir -p "$runtime_log_dir" 2>/dev/null || true
 }
 
+path_contains_dir() {
+  target_dir="$1"
+  case ":${PATH:-}:" in
+    *":${target_dir}:"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+print_path_guidance() {
+  install_dir_no_slash="${INSTALL_DIR%/}"
+  if path_contains_dir "$install_dir_no_slash"; then
+    info "PATH note: ${install_dir_no_slash} is already on PATH."
+    return
+  fi
+
+  info "PATH note: ${install_dir_no_slash} is not currently on PATH."
+  if [ "$os" = 'windows' ]; then
+    info "Run the binary with its full path, or add ${install_dir_no_slash} to your user PATH."
+  else
+    info "Run the binary with its full path, or add this line to your shell profile:"
+    info "  export PATH=\"${install_dir_no_slash}:\$PATH\""
+  fi
+}
+
 install_binary() {
   source_file="$1"
   target_file="$2"
@@ -458,7 +486,7 @@ section "Summary"
 info "Binary status: ${binary_action}"
 info "Binary path: ${target_path}"
 
-if [ "$service_mode" = 'systemd' ] && [ "$service_available" -eq 1 ]; then
+if [ "$service_mode" = 'systemd' ] && [ "$service_available" -eq 1 ] && [ "$service_status" != 'not configured' ]; then
   info "Service manager: systemd"
   info "Service unit: ${systemd_unit_name}"
   info "Service status: ${service_status}"
@@ -476,5 +504,6 @@ else
   print_manual_run_instructions
 fi
 
+print_path_guidance
 info "Help command: ${install_name}${artifact_suffix} --help"
 info "Logs: direct runs write to your terminal; service-managed runs write to service logs."
