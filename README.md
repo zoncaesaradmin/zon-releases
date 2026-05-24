@@ -89,6 +89,42 @@ No `GITHUB_TOKEN` is required. The installer downloads artifacts directly from:
 https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/releases/agent/latest/
 ```
 
+## Refresh release artifacts
+
+This repo also includes a helper script to rebuild and refresh the latest agent
+release payload from the private source repo.
+
+Run:
+
+```bash
+./build.sh
+```
+
+What `build.sh` does:
+
+1. clones or updates `git@github.com:zoncaesaradmin/zonpackager.git`
+2. checks out `main`
+3. runs `make releases`
+4. finds the built `zon-agentd_*` binaries
+5. copies them into `releases/agent/latest/`
+6. regenerates `releases/agent/latest/SHA256SUMS`
+
+Defaults:
+
+- source repo: `git@github.com:zoncaesaradmin/zonpackager.git`
+- source ref: `main`
+- source checkout: `.build/zonpackager`
+- target release dir: `releases/agent/latest`
+
+Optional overrides:
+
+- `PRIMARY_REPO_URL`
+- `FALLBACK_REPO_URL`
+- `SOURCE_REF`
+- `WORK_ROOT`
+- `SOURCE_DIR`
+- `TARGET_DIR`
+
 ## Install to a custom directory
 
 ```bash
