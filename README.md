@@ -69,7 +69,7 @@ The installer:
 3. downloads `SHA256SUMS` and the matching binary
 4. verifies the checksum by default
 5. installs or updates the binary in `INSTALL_DIR`
-6. optionally installs a Linux `systemd` service
+6. optionally installs a Linux `systemd` service using fixed system paths
 7. restarts an already-running Linux `systemd` service after an update
 
 Default settings:
@@ -85,8 +85,6 @@ Default settings:
 - `REPO_REF=main`
 - `SERVICE_NAME=zon-agentd`
 - `SERVICE_ADDR=:8080`
-- `SERVICE_LOG_FILE=/var/log/zon/zon-agentd.log`
-- `SERVICE_WORK_DIR=/var/lib/zon`
 
 Optional overrides:
 
@@ -97,6 +95,18 @@ Optional overrides:
 
 On Linux systems with `systemd`, you can ask the installer to create and manage
 `zon-agentd` as a service.
+
+When Linux service mode is used, the installer manages these fixed paths for
+you:
+
+```text
+Binary: /usr/local/bin/zon-agentd
+Unit: /etc/systemd/system/zon-agentd.service
+Log file: /var/log/zon/zon-agentd.log
+Working directory: /var/lib/zon
+```
+
+If the directories or log file do not exist, the installer creates them.
 
 Install the service but do not start it yet:
 
@@ -136,6 +146,8 @@ The same `install.sh` command is used for both fresh installs and upgrades.
   active.
 - If the service is installed but not running, it is left stopped unless
   `START_SERVICE=1` is provided.
+- If Linux service mode is requested or already present, the installer uses the
+  fixed system binary path `/usr/local/bin/zon-agentd`.
 
 ## Installed location
 
@@ -175,6 +187,12 @@ When installed as a Linux `systemd` service, the default log file is:
 ```text
 /var/log/zon/zon-agentd.log
 ```
+
+For manual runs, the installer suggests a user-writable log path for the
+current platform, for example:
+
+- macOS: `$HOME/Library/Logs/zon/zon-agentd.log`
+- Linux without `systemd` service mode: `$HOME/.local/state/zon/zon-agentd.log`
 
 ## Uninstall
 

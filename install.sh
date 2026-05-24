@@ -14,9 +14,11 @@ REPO_REF="${REPO_REF:-main}"
 BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${REPO_REF}/releases}"
 SERVICE_NAME="${SERVICE_NAME:-zon-agentd}"
 SERVICE_ADDR="${SERVICE_ADDR:-:8080}"
-SERVICE_LOG_FILE="${SERVICE_LOG_FILE:-/var/log/zon/zon-agentd.log}"
-SERVICE_WORK_DIR="${SERVICE_WORK_DIR:-/var/lib/zon}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+SYSTEM_INSTALL_DIR='/usr/local/bin'
+SYSTEM_LOG_DIR='/var/log/zon'
+SYSTEM_LOG_FILE="${SYSTEM_LOG_DIR}/zon-agentd.log"
+SYSTEM_WORK_DIR='/var/lib/zon'
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
@@ -147,10 +149,10 @@ verify_checksum() {
 manual_start_command() {
   case "$os" in
     windows)
-      printf '"%s" -addr "%s" -log-file "%s"\n' "$target_path" "$SERVICE_ADDR" "$SERVICE_LOG_FILE"
+      printf '"%s" -addr "%s" -log-file "%s"\n' "$target_path" "$SERVICE_ADDR" "$runtime_log_file"
       ;;
     *)
-      printf '"%s" -addr "%s" -log-file "%s"\n' "$target_path" "$SERVICE_ADDR" "$SERVICE_LOG_FILE"
+      printf '"%s" -addr "%s" -log-file "%s"\n' "$target_path" "$SERVICE_ADDR" "$runtime_log_file"
       ;;
   esac
 }
@@ -167,6 +169,7 @@ manual_stop_command() {
 }
 
 print_manual_run_instructions() {
+  ensure_runtime_log_dir
   info "Automatic service management: not configured."
   info "Start manually:"
   info "  $(manual_start_command)"
@@ -176,6 +179,32 @@ print_manual_run_instructions() {
   else
     info "  Press Ctrl-C if running in the foreground, or run: $(manual_stop_command)"
   fi
+}
+
+service_requested() {
+  bool_true "$INSTALL_SERVICE" || bool_true "$START_SERVICE"
+}
+
+resolve_runtime_log_file() {
+  case "$os" in
+    darwin)
+      printf '%s\n' "${HOME:-/tmp}/Library/Logs/zon/zon-agentd.log"
+      ;;
+    linux)
+      printf '%s\n' "${HOME:-/tmp}/.local/state/zon/zon-agentd.log"
+      ;;
+    windows)
+      printf '%s\n' "${HOME:-/tmp}/AppData/Local/zon/logs/zon-agentd.log"
+      ;;
+    *)
+      printf '%s\n' '/tmp/zon-agentd.log'
+      ;;
+  esac
+}
+
+ensure_runtime_log_dir() {
+  runtime_log_dir="$(dirname "$runtime_log_file")"
+  mkdir -p "$runtime_log_dir" 2>/dev/null || true
 }
 
 install_binary() {
@@ -223,7 +252,9 @@ systemd_service_is_active() {
 }
 
 ensure_systemd_service_dirs() {
-  mkdir -p "$(dirname "$SERVICE_LOG_FILE")" "$SERVICE_WORK_DIR" || fail "Failed to create service directories"
+  mkdir -p "$SYSTEM_LOG_DIR" "$SYSTEM_WORK_DIR" || fail "Failed to create service directories"
+  touch "$SYSTEM_LOG_FILE" || fail "Failed to create log file: $SYSTEM_LOG_FILE"
+  chmod 0644 "$SYSTEM_LOG_FILE" || fail "Failed to set log file permissions: $SYSTEM_LOG_FILE"
 }
 
 write_systemd_unit() {
@@ -235,8 +266,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=${SERVICE_WORK_DIR}
-ExecStart=${target_path} -addr ${SERVICE_ADDR} -log-file ${SERVICE_LOG_FILE}
+WorkingDirectory=${SYSTEM_WORK_DIR}
+ExecStart=${target_path} -addr ${SERVICE_ADDR} -log-file ${SYSTEM_LOG_FILE}
 Restart=on-failure
 RestartSec=5
 
@@ -246,7 +277,6 @@ EOF
 }
 
 manage_linux_service() {
-  service_requested=0
   service_exists=0
   service_was_active=0
   service_definition_updated=0
@@ -255,13 +285,9 @@ manage_linux_service() {
   service_status='not configured'
   service_reason=''
 
-  if bool_true "$INSTALL_SERVICE" || bool_true "$START_SERVICE"; then
-    service_requested=1
-  fi
-
   if [ "$os" != 'linux' ]; then
     service_reason="automatic service installation is only implemented on Linux systems with systemd"
-    if [ "$service_requested" -eq 1 ]; then
+    if service_requested; then
       warn "Service installation is only implemented for Linux systems with systemd. Skipping service setup."
     fi
     return
@@ -269,7 +295,7 @@ manage_linux_service() {
 
   if ! systemd_is_available; then
     service_reason="systemd was not detected"
-    if [ "$service_requested" -eq 1 ]; then
+    if service_requested; then
       warn "systemd was not detected. The binary was installed, but no service was configured."
     fi
     return
@@ -287,22 +313,8 @@ manage_linux_service() {
     fi
   fi
 
-  if [ "$service_requested" -eq 0 ] && [ "$service_exists" -eq 0 ]; then
+  if ! service_requested && [ "$service_exists" -eq 0 ]; then
     service_reason="systemd is available, but INSTALL_SERVICE was not requested"
-    return
-  fi
-
-  if ! is_root; then
-    if [ "$service_exists" -eq 1 ] && [ "$service_was_active" -eq 1 ] && [ "$binary_changed" -eq 1 ]; then
-      service_reason="service restart requires root privileges"
-      warn "An active ${systemd_unit_name} service was detected, but this installer is not running as root, so it could not be restarted."
-      return
-    fi
-
-    if [ "$service_requested" -eq 1 ]; then
-      service_reason="service setup requires root privileges"
-      warn "Service setup was requested, but root privileges are required. Re-run with sudo to install or manage the service."
-    fi
     return
   fi
 
@@ -329,12 +341,6 @@ manage_linux_service() {
   fi
 
   if bool_true "$START_SERVICE"; then
-    if [ "$service_exists" -eq 0 ]; then
-      service_reason="START_SERVICE was requested, but no systemd service is installed"
-      warn "START_SERVICE was requested, but no ${systemd_unit_name} service is installed."
-      return
-    fi
-
     info "Starting service: ${systemd_unit_name}"
     systemctl start "$systemd_unit_name"
     service_status='running'
@@ -371,15 +377,37 @@ if [ "$os" = 'windows' ]; then
   artifact_suffix='.exe'
 fi
 
+runtime_log_file="$(resolve_runtime_log_file)"
+
 artifact_name="${artifact_stem}_${os}_${arch}${artifact_suffix}"
 release_url="${BASE_URL%/}/${PRODUCT}/${VERSION}"
 checksums_url="${release_url}/SHA256SUMS"
 artifact_url="${release_url}/${artifact_name}"
-target_path="${INSTALL_DIR%/}/${install_name}${artifact_suffix}"
 systemd_unit_name="${SERVICE_NAME}.service"
 systemd_unit_path="${SYSTEMD_UNIT_DIR%/}/${systemd_unit_name}"
 binary_changed=0
 binary_action='unknown'
+service_mode='manual'
+service_status='not configured'
+service_reason=''
+service_available=0
+
+if [ "$os" = 'linux' ] && bool_true "$START_SERVICE"; then
+  INSTALL_SERVICE=1
+fi
+
+if [ "$os" = 'linux' ] && { service_requested || [ -f "$systemd_unit_path" ]; }; then
+  if [ "${INSTALL_DIR%/}" != "$SYSTEM_INSTALL_DIR" ]; then
+    info "Using fixed Linux service install path: ${SYSTEM_INSTALL_DIR}"
+  fi
+  INSTALL_DIR="$SYSTEM_INSTALL_DIR"
+fi
+
+target_path="${INSTALL_DIR%/}/${install_name}${artifact_suffix}"
+
+if [ "$os" = 'linux' ] && { [ -f "$systemd_unit_path" ] || { service_requested && systemd_is_available; }; } && ! is_root; then
+  fail "Linux service install and upgrade must run as root. Re-run with sudo."
+fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM
@@ -419,6 +447,8 @@ if [ "$service_mode" = 'systemd' ] && [ "$service_available" -eq 1 ]; then
   info "Service manager: systemd"
   info "Service unit: ${systemd_unit_name}"
   info "Service status: ${service_status}"
+  info "Log file: ${SYSTEM_LOG_FILE}"
+  info "Working directory: ${SYSTEM_WORK_DIR}"
   info "Start command: sudo systemctl start ${systemd_unit_name}"
   info "Stop command: sudo systemctl stop ${systemd_unit_name}"
   info "Restart command: sudo systemctl restart ${systemd_unit_name}"
@@ -427,6 +457,7 @@ else
   if [ -n "$service_reason" ]; then
     info "Service setup note: ${service_reason}"
   fi
+  info "Manual log file: ${runtime_log_file}"
   print_manual_run_instructions
 fi
 
