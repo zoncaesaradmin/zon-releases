@@ -31,6 +31,13 @@ curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/in
   sudo env INSTALL_DIR=/usr/local/bin bash
 ```
 
+Linux systemd install and start:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
+  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 START_SERVICE=1 bash
+```
+
 ## Install a specific version
 
 ```bash
@@ -61,7 +68,9 @@ The installer:
 2. resolves the correct artifact under `releases/<product>/<version>/`
 3. downloads `SHA256SUMS` and the matching binary
 4. verifies the checksum by default
-5. installs the binary into `INSTALL_DIR`
+5. installs or updates the binary in `INSTALL_DIR`
+6. optionally installs a Linux `systemd` service
+7. restarts an already-running Linux `systemd` service after an update
 
 Default settings:
 
@@ -69,14 +78,64 @@ Default settings:
 - `VERSION=latest`
 - `INSTALL_DIR=/usr/local/bin`
 - `VERIFY_CHECKSUMS=1`
+- `INSTALL_SERVICE=0`
+- `START_SERVICE=0`
 - `REPO_OWNER=zoncaesaradmin`
 - `REPO_NAME=zon-releases`
 - `REPO_REF=main`
+- `SERVICE_NAME=zon-agentd`
+- `SERVICE_ADDR=:8080`
+- `SERVICE_LOG_FILE=/var/log/zon/zon-agentd.log`
+- `SERVICE_WORK_DIR=/var/lib/zon`
 
 Optional overrides:
 
 - `BINARY_NAME`
 - `BASE_URL`
+
+## Linux service mode
+
+On Linux systems with `systemd`, you can ask the installer to create and manage
+`zon-agentd` as a service.
+
+Install the service but do not start it yet:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
+  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 bash
+```
+
+Install the service and start it immediately:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zoncaesaradmin/zon-releases/main/install.sh | \
+  sudo env INSTALL_DIR=/usr/local/bin INSTALL_SERVICE=1 START_SERVICE=1 bash
+```
+
+Manage the service:
+
+```bash
+sudo systemctl start zon-agentd.service
+sudo systemctl stop zon-agentd.service
+sudo systemctl restart zon-agentd.service
+sudo systemctl status zon-agentd.service
+```
+
+If `systemd` is not present, the installer falls back to binary-only install.
+
+## Upgrade behavior
+
+The same `install.sh` command is used for both fresh installs and upgrades.
+
+- Running the installer again downloads the current artifact from the selected
+  `VERSION` path and replaces the installed binary.
+- If a Linux `zon-agentd.service` already exists and is currently running, the
+  installer restarts it after updating the binary.
+- If `INSTALL_SERVICE=1` is used during an upgrade, the installer also refreshes
+  the `systemd` unit definition and restarts the service if it was already
+  active.
+- If the service is installed but not running, it is left stopped unless
+  `START_SERVICE=1` is provided.
 
 ## Installed location
 
@@ -104,11 +163,18 @@ zon-agentd --help
 If you installed to `$HOME/.local/bin`, make sure that directory is on your
 `PATH`.
 
+For Linux service installs, use `systemctl` instead of running the binary
+directly.
+
 ## Logs
 
-When run directly, logs are written to your terminal. When run under a service
-manager, logs are available through that service manager's normal logging
-mechanism.
+When run directly, logs are written to your terminal.
+
+When installed as a Linux `systemd` service, the default log file is:
+
+```text
+/var/log/zon/zon-agentd.log
+```
 
 ## Uninstall
 
