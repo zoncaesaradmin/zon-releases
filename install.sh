@@ -312,7 +312,6 @@ manage_linux_service() {
   fi
 
   service_available=1
-  service_mode='systemd'
 
   if systemd_service_exists; then
     service_exists=1
@@ -327,6 +326,8 @@ manage_linux_service() {
     service_reason="systemd is available, but INSTALL_SERVICE was not requested"
     return
   fi
+
+  service_mode='systemd'
 
   if bool_true "$INSTALL_SERVICE"; then
     info "Installing systemd service definition: ${systemd_unit_name}"
